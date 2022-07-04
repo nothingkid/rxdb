@@ -13,8 +13,9 @@
 import config from './config';
 
 import { createRxDatabase, randomCouchString } from '../../';
+import { getRxStorageLoki } from '../../plugins/lokijs';
 
-const COLLECTIONS_COUNT = 20;
+const COLLECTIONS_COUNT = 100;
 
 console.log('### bug report test ###');
 
@@ -68,7 +69,7 @@ describe('bug-report.test.js', () => {
              * By calling config.storage.getStorage(),
              * we can ensure that all variations of RxStorage are tested in the CI.
              */
-            storage: config.storage.getStorage(),
+            storage: getRxStorageLoki(),
             eventReduce: true,
             ignoreDuplicate: true,
         });
@@ -78,24 +79,31 @@ describe('bug-report.test.js', () => {
         const collectionCreators = new Array(COLLECTIONS_COUNT)
             .fill(null)
             .reduce((acc, current, idx) => {
-                acc['mycollection' + idx] = mySchema;
+                acc['mycollection' + idx] = {
+                    schema: mySchema,
+                };
 
                 return acc;
             }, {});
 
-        console.log('BUG REPORT: Goint to create colls', collectionCreators);
         await db.addCollections(collectionCreators);
-
-        console.log('Coll keys', Object.keys(db.collections));
 
         await Promise.all(
             Object.keys(db.collections).map((collName) => {
-                return db.collections[collName].insert({
-                    passportId: 'foobar',
-                    firstName: 'Bob',
-                    lastName: 'Kelso',
-                    age: 56,
-                });
+                return db.collections[collName].bulkInsert(
+                    new Array(COLLECTIONS_COUNT)
+                        .fill({
+                            passportId: 'foobar',
+                            firstName: 'Bob',
+                            lastName: 'Kelso',
+                            age: 56,
+                        })
+                        .map((d, idx) => {
+                            const cpy = { ...d };
+                            cpy.passportId = cpy.passportId + idx;
+                            return cpy;
+                        })
+                );
             })
         );
 
