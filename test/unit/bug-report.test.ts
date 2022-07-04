@@ -8,34 +8,33 @@
  * - 'npm run test:node' so it runs in nodejs
  * - 'npm run test:browser' so it runs in the browser
  */
-import assert from 'assert';
-import AsyncTestUtil from 'async-test-util';
+// import assert from 'assert';
+// import AsyncTestUtil from 'async-test-util';
 import config from './config';
 
-import {
-    createRxDatabase,
-    randomCouchString
-} from '../../';
+import { createRxDatabase, randomCouchString } from '../../';
+
+const COLLECTIONS_COUNT = 20;
+
+console.log('### bug report test ###');
 
 describe('bug-report.test.js', () => {
     it('should fail because it reproduces the bug', async () => {
+        console.log('### bug report test ### 1');
 
         /**
          * If your test should only run in nodejs or only run in the browser,
          * you should comment in the return operator and addapt the if statement.
          */
         if (
-            !config.platform.isNode() // runs only in node
+            config.platform.isNode() // runs only in node
             // config.platform.isNode() // runs only in the browser
         ) {
-            // return;
-        }
-
-        if (!config.storage.hasMultiInstance) {
             return;
         }
 
         // create a schema
+
         const mySchema = {
             version: 0,
             primaryKey: 'passportId',
@@ -43,20 +42,20 @@ describe('bug-report.test.js', () => {
             properties: {
                 passportId: {
                     type: 'string',
-                    maxLength: 100
+                    maxLength: 100,
                 },
                 firstName: {
-                    type: 'string'
+                    type: 'string',
                 },
                 lastName: {
-                    type: 'string'
+                    type: 'string',
                 },
                 age: {
                     type: 'integer',
                     minimum: 0,
-                    maximum: 150
-                }
-            }
+                    maximum: 150,
+                },
+            },
         };
 
         // generate a random database-name
@@ -71,63 +70,42 @@ describe('bug-report.test.js', () => {
              */
             storage: config.storage.getStorage(),
             eventReduce: true,
-            ignoreDuplicate: true
+            ignoreDuplicate: true,
         });
         // create a collection
-        const collections = await db.addCollections({
-            mycollection: {
-                schema: mySchema
-            }
-        });
 
-        // insert a document
-        await collections.mycollection.insert({
-            passportId: 'foobar',
-            firstName: 'Bob',
-            lastName: 'Kelso',
-            age: 56
-        });
+        // create
+        const collectionCreators = new Array(COLLECTIONS_COUNT)
+            .fill(null)
+            .reduce((acc, current, idx) => {
+                acc['mycollection' + idx] = mySchema;
 
-        /**
-         * to simulate the event-propagation over multiple browser-tabs,
-         * we create the same database again
-         */
-        const dbInOtherTab = await createRxDatabase({
-            name,
-            storage: config.storage.getStorage(),
-            eventReduce: true,
-            ignoreDuplicate: true
-        });
-        // create a collection
-        const collectionInOtherTab = await dbInOtherTab.addCollections({
-            mycollection: {
-                schema: mySchema
-            }
-        });
+                return acc;
+            }, {});
 
-        // find the document in the other tab
-        const myDocument = await collectionInOtherTab.mycollection
-            .findOne()
-            .where('firstName')
-            .eq('Bob')
-            .exec();
+        console.log('BUG REPORT: Goint to create colls', collectionCreators);
+        await db.addCollections(collectionCreators);
 
-        /*
-         * assert things,
-         * here your tests should fail to show that there is a bug
-         */
-        assert.strictEqual(myDocument.age, 56);
+        console.log('Coll keys', Object.keys(db.collections));
 
-        // you can also wait for events
-        const emitted = [];
-        const sub = collectionInOtherTab.mycollection
-            .findOne().$
-            .subscribe(doc => emitted.push(doc));
-        await AsyncTestUtil.waitUntil(() => emitted.length === 1);
+        await Promise.all(
+            Object.keys(db.collections).map((collName) => {
+                return db.collections[collName].insert({
+                    passportId: 'foobar',
+                    firstName: 'Bob',
+                    lastName: 'Kelso',
+                    age: 56,
+                });
+            })
+        );
+
+        await Promise.all(
+            Object.keys(db.collections).map((collName) => {
+                return db.collections[collName].remove();
+            })
+        );
 
         // clean up afterwards
-        sub.unsubscribe();
         db.destroy();
-        dbInOtherTab.destroy();
     });
 });
